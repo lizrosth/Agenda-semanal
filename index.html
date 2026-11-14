@@ -80,6 +80,13 @@ h1{margin:0; font:700 28px/1.1 var(--font-display); letter-spacing:-.01em; font-
 .card.late{border-color:var(--warm)}
 .card.late h2{color:var(--warm)}
 .hint{margin:0; font-size:13px; color:var(--muted)}
+.viewtoggle{display:inline-flex; align-self:flex-start; border:1px solid var(--line); border-radius:10px; overflow:hidden; background:var(--surface)}
+.viewtoggle button{border:0; background:transparent; color:var(--fg); padding:9px 16px; font-size:14px; font-weight:500; cursor:pointer}
+.viewtoggle button[aria-pressed="true"]{background:var(--accent); color:var(--accent-ink); font-weight:600}
+.lgroup{display:flex; flex-direction:column; gap:4px; padding:10px 0; border-top:1px solid var(--line)}
+.lgroup:first-child{border-top:0; padding-top:0}
+.lhead{margin:0; font:600 15px var(--font-display); display:flex; align-items:baseline; gap:8px}
+.lhead small{font:500 13px var(--font-body); color:var(--muted)}
 .quick{display:flex; gap:8px}
 .quick input{flex:1; min-width:0}
 .linkbtn{background:none; border:0; padding:0; color:var(--accent); font-size:12px; font-weight:500; cursor:pointer; text-decoration:underline}
@@ -177,6 +184,11 @@ legend{font-size:13px; color:var(--muted); padding:0; margin-bottom:6px}
     <button type="button" class="primary" id="add">+ Nueva tarea</button>
   </div>
 
+  <div class="viewtoggle" role="group" aria-label="Vista">
+    <button type="button" id="v-week" aria-pressed="true">Semana</button>
+    <button type="button" id="v-list" aria-pressed="false">Lista por fecha</button>
+  </div>
+
   <div class="strip" id="strip" aria-label="Días de la semana"></div>
 
   <div class="banner" id="banner" hidden>
@@ -200,6 +212,11 @@ legend{font-size:13px; color:var(--muted); padding:0; margin-bottom:6px}
   </section>
 
   <main class="week" id="week"></main>
+
+  <section class="card" id="listview" hidden aria-labelledby="list-h">
+    <h2 id="list-h">Próximos 14 días <small>solo días con tareas</small></h2>
+    <div id="list-days"></div>
+  </section>
 
   <p class="status" id="status" role="status" aria-live="polite"></p>
 </div>
@@ -295,6 +312,7 @@ var loaded = false;
 var mode = 'boot';          // 'boot' | 'db' | 'local'
 var ref = null, writing = false, dirty = false;
 var editingId = null, formPreset = null;
+var view = 'week';          // 'week' | 'list'
 
 /* ---------- Datos de cada día ---------- */
 function forDate(s){
@@ -436,6 +454,19 @@ function render(){
     ? weekStart.getDate() + ' – ' + we.getDate() + ' ' + MONTHS[we.getMonth()]
     : weekStart.getDate() + ' ' + MONTHS[weekStart.getMonth()] + ' – ' + we.getDate() + ' ' + MONTHS[we.getMonth()];
   $('range').textContent = r + ' ' + we.getFullYear();
+  var isList = view === 'list';
+  if (isList){
+    var nd = new Date();
+    $('eyebrow').textContent = 'Hoy';
+    $('range').textContent = DAYS_LONG[wdIndex(nd)] + ' ' + nd.getDate() + ' ' + MONTHS[nd.getMonth()];
+  }
+  $('v-week').setAttribute('aria-pressed', isList ? 'false' : 'true');
+  $('v-list').setAttribute('aria-pressed', isList ? 'true' : 'false');
+  document.querySelector('.nav').hidden = isList;
+  document.querySelector('.progress').hidden = isList;
+  $('strip').hidden = isList;
+  $('week').hidden = isList;
+  $('listview').hidden = !isList;
 
   /* Avance de la semana */
   var total = 0, done = 0, days = [];
@@ -505,12 +536,12 @@ function render(){
       var o0 = el('option', '', 'Asignar a…');
       o0.value = '';
       sel.appendChild(o0);
-      days.forEach(function(dd, i){
-        var d = addDays(weekStart, i);
-        var o = el('option', '', DAYS[i] + ' ' + d.getDate());
-        o.value = dd.s;
+      for (var k = 0; k < 7; k++){
+        var od = isList ? addDays(new Date(), k) : addDays(weekStart, k);
+        var o = el('option', '', DAYS[wdIndex(od)] + ' ' + od.getDate());
+        o.value = ymd(od);
         sel.appendChild(o);
-      });
+      }
       sel.onchange = function(){
         if (!sel.value) return;
         t.kind = 'once';
@@ -565,6 +596,30 @@ function render(){
     }
     wk.appendChild(card);
   });
+
+  if (isList) renderList();
+}
+
+function renderList(){
+  var box = $('list-days');
+  box.textContent = '';
+  var shown = 0;
+  for (var n = 0; n < 14; n++){
+    var day = addDays(new Date(), n);
+    var items = forDate(ymd(day));
+    if (!items.length) continue;
+    shown++;
+    var g = el('div', 'lgroup');
+    var h = el('h3', 'lhead');
+    h.appendChild(el('span', '', n === 0 ? 'Hoy' : (n === 1 ? 'Mañana' : DAYS_LONG[wdIndex(day)])));
+    h.appendChild(el('small', '', day.getDate() + ' ' + MONTHS[day.getMonth()]));
+    g.appendChild(h);
+    var ul = el('ul', 'items');
+    items.forEach(function(x){ ul.appendChild(itemEl(x.t, x.date, x.done)); });
+    g.appendChild(ul);
+    box.appendChild(g);
+  }
+  if (!shown) box.appendChild(el('p', 'hint', 'No hay tareas en los próximos 14 días.'));
 }
 
 /* ---------- Formulario ---------- */
@@ -652,6 +707,8 @@ $('prev').onclick = function(){ weekStart = addDays(weekStart, -7); render(); };
 $('next').onclick = function(){ weekStart = addDays(weekStart, 7); render(); };
 $('today').onclick = function(){ weekStart = mondayOf(new Date()); render(); };
 $('add').onclick = function(){ openForm(null); };
+$('v-week').onclick = function(){ view = 'week'; render(); };
+$('v-list').onclick = function(){ view = 'list'; render(); };
 $('clear-ex').onclick = function(){
   state.tasks = state.tasks.filter(function(t){ return !t.ex; });
   commit();
