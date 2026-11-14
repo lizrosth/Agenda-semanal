@@ -87,6 +87,19 @@ h1{margin:0; font:700 28px/1.1 var(--font-display); letter-spacing:-.01em; font-
 .lgroup:first-child{border-top:0; padding-top:0}
 .lhead{margin:0; font:600 15px var(--font-display); display:flex; align-items:baseline; gap:8px}
 .lhead small{font:500 13px var(--font-body); color:var(--muted)}
+.mgrid{display:grid; grid-template-columns:repeat(7, minmax(0,1fr)); gap:4px}
+.mdow{font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); text-align:center; padding:2px 0}
+.mcell{display:flex; flex-direction:column; align-items:stretch; gap:2px; min-height:80px; padding:4px 3px; border:1px solid var(--line); border-radius:8px; background:var(--surface); color:var(--fg); text-align:left; cursor:pointer; min-width:0; overflow:hidden}
+.mcell.out{opacity:.45}
+.mcell.sel{border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent)}
+.mnum{align-self:center; width:24px; height:24px; display:flex; align-items:center; justify-content:center; border-radius:50%; font:600 13px var(--font-display); font-variant-numeric:tabular-nums}
+.mcell.today .mnum{background:var(--accent); color:var(--accent-ink)}
+.mchip{display:block; font-size:10px; line-height:1.3; padding:1px 3px; border-radius:4px; background:var(--accent-soft); color:var(--fg); overflow:hidden; white-space:nowrap; text-overflow:ellipsis}
+.mchip.once{background:var(--warm-soft)}
+.mchip.done{text-decoration:line-through; opacity:.6}
+.mmore{font-size:10px; color:var(--muted); padding-left:3px}
+.mdetail{margin-top:12px; padding-top:12px; border-top:1px solid var(--line); display:flex; flex-direction:column; gap:6px}
+@media (min-width:720px){.mcell{min-height:110px; padding:6px 6px} .mchip{font-size:12px; padding:2px 5px}}
 .quick{display:flex; gap:8px}
 .quick input{flex:1; min-width:0}
 .linkbtn{background:none; border:0; padding:0; color:var(--accent); font-size:12px; font-weight:500; cursor:pointer; text-decoration:underline}
@@ -185,7 +198,8 @@ legend{font-size:13px; color:var(--muted); padding:0; margin-bottom:6px}
   </div>
 
   <div class="viewtoggle" role="group" aria-label="Vista">
-    <button type="button" id="v-week" aria-pressed="true">Semana</button>
+    <button type="button" id="v-month" aria-pressed="true">Mes</button>
+    <button type="button" id="v-week" aria-pressed="false">Semana</button>
     <button type="button" id="v-list" aria-pressed="false">Lista por fecha</button>
   </div>
 
@@ -212,6 +226,11 @@ legend{font-size:13px; color:var(--muted); padding:0; margin-bottom:6px}
   </section>
 
   <main class="week" id="week"></main>
+
+  <section class="card" id="monthview" hidden aria-label="Calendario del mes">
+    <div class="mgrid" id="mgrid"></div>
+    <div class="mdetail" id="mdetail"></div>
+  </section>
 
   <section class="card" id="listview" hidden aria-labelledby="list-h">
     <h2 id="list-h">Próximos 14 días <small>solo días con tareas</small></h2>
@@ -276,6 +295,7 @@ legend{font-size:13px; color:var(--muted); padding:0; margin-bottom:6px}
 var DAYS = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
 var DAYS_LONG = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
 var MONTHS = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+var MONTHS_LONG = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 var LS_KEY = 'agenda-semanal-v1';
 
 function pad(n){ return n < 10 ? '0' + n : '' + n; }
@@ -312,7 +332,9 @@ var loaded = false;
 var mode = 'boot';          // 'boot' | 'db' | 'local'
 var ref = null, writing = false, dirty = false;
 var editingId = null, formPreset = null;
-var view = 'week';          // 'week' | 'list'
+var view = 'month';
+var monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+var selDay = ymd(new Date());          // 'week' | 'list'
 
 /* ---------- Datos de cada día ---------- */
 function forDate(s){
@@ -454,19 +476,25 @@ function render(){
     ? weekStart.getDate() + ' – ' + we.getDate() + ' ' + MONTHS[we.getMonth()]
     : weekStart.getDate() + ' ' + MONTHS[weekStart.getMonth()] + ' – ' + we.getDate() + ' ' + MONTHS[we.getMonth()];
   $('range').textContent = r + ' ' + we.getFullYear();
-  var isList = view === 'list';
+  var isList = view === 'list', isMonth = view === 'month';
   if (isList){
     var nd = new Date();
     $('eyebrow').textContent = 'Hoy';
     $('range').textContent = DAYS_LONG[wdIndex(nd)] + ' ' + nd.getDate() + ' ' + MONTHS[nd.getMonth()];
   }
-  $('v-week').setAttribute('aria-pressed', isList ? 'false' : 'true');
+  if (isMonth){
+    $('eyebrow').textContent = 'Mes';
+    $('range').textContent = MONTHS_LONG[monthStart.getMonth()] + ' ' + monthStart.getFullYear();
+  }
+  $('v-month').setAttribute('aria-pressed', isMonth ? 'true' : 'false');
+  $('v-week').setAttribute('aria-pressed', view === 'week' ? 'true' : 'false');
   $('v-list').setAttribute('aria-pressed', isList ? 'true' : 'false');
   document.querySelector('.nav').hidden = isList;
-  document.querySelector('.progress').hidden = isList;
-  $('strip').hidden = isList;
-  $('week').hidden = isList;
+  document.querySelector('.progress').hidden = view !== 'week';
+  $('strip').hidden = view !== 'week';
+  $('week').hidden = view !== 'week';
   $('listview').hidden = !isList;
+  $('monthview').hidden = !isMonth;
 
   /* Avance de la semana */
   var total = 0, done = 0, days = [];
@@ -537,7 +565,7 @@ function render(){
       o0.value = '';
       sel.appendChild(o0);
       for (var k = 0; k < 7; k++){
-        var od = isList ? addDays(new Date(), k) : addDays(weekStart, k);
+        var od = view !== 'week' ? addDays(new Date(), k) : addDays(weekStart, k);
         var o = el('option', '', DAYS[wdIndex(od)] + ' ' + od.getDate());
         o.value = ymd(od);
         sel.appendChild(o);
@@ -598,6 +626,59 @@ function render(){
   });
 
   if (isList) renderList();
+  if (isMonth) renderMonth();
+}
+
+function renderMonth(){
+  var tS = nowS();
+  var grid = $('mgrid');
+  grid.textContent = '';
+  ['L','M','X','J','V','S','D'].forEach(function(l){ grid.appendChild(el('div', 'mdow', l)); });
+  var first = monthStart;
+  var last = new Date(first.getFullYear(), first.getMonth() + 1, 0);
+  var cur = mondayOf(first);
+  var end = addDays(mondayOf(last), 6);
+  while (cur <= end){
+    (function(d){
+      var s = ymd(d);
+      var its = forDate(s);
+      var cell = el('button', 'mcell' + (d.getMonth() !== first.getMonth() ? ' out' : '') + (s === tS ? ' today' : '') + (s === selDay ? ' sel' : ''));
+      cell.type = 'button';
+      cell.setAttribute('aria-label', DAYS_LONG[wdIndex(d)] + ' ' + d.getDate() + ', ' + its.length + (its.length === 1 ? ' tarea' : ' tareas'));
+      cell.appendChild(el('span', 'mnum', d.getDate()));
+      its.slice(0, 2).forEach(function(x){
+        cell.appendChild(el('span', 'mchip ' + x.t.kind + (x.done ? ' done' : ''), x.t.title));
+      });
+      if (its.length > 2) cell.appendChild(el('span', 'mmore', '+' + (its.length - 2) + ' más'));
+      cell.onclick = function(){ selDay = s; render(); };
+      grid.appendChild(cell);
+    })(cur);
+    cur = addDays(cur, 1);
+  }
+
+  var det = $('mdetail');
+  det.textContent = '';
+  var sd = parse(selDay);
+  var head = el('div', 'dayhead');
+  var left = el('div');
+  left.appendChild(el('span', 'dayname', DAYS_LONG[wdIndex(sd)]));
+  left.appendChild(el('span', 'daydate', sd.getDate() + ' ' + MONTHS[sd.getMonth()]));
+  if (selDay === tS) left.appendChild(el('span', 'pill', 'Hoy'));
+  head.appendChild(left);
+  var add = el('button', 'addday', '+');
+  add.type = 'button';
+  add.setAttribute('aria-label', 'Añadir tarea el ' + sd.getDate() + ' de ' + MONTHS[sd.getMonth()]);
+  add.onclick = function(){ openForm(null, { date: selDay }); };
+  head.appendChild(add);
+  det.appendChild(head);
+  var items = forDate(selDay);
+  if (items.length){
+    var ul = el('ul', 'items');
+    items.forEach(function(x){ ul.appendChild(itemEl(x.t, x.date, x.done)); });
+    det.appendChild(ul);
+  } else {
+    det.appendChild(el('p', 'free', 'Libre'));
+  }
 }
 
 function renderList(){
@@ -703,11 +784,26 @@ Array.prototype.forEach.call(document.querySelectorAll('input[name="kind"]'), fu
 });
 
 /* ---------- Controles de la página ---------- */
-$('prev').onclick = function(){ weekStart = addDays(weekStart, -7); render(); };
-$('next').onclick = function(){ weekStart = addDays(weekStart, 7); render(); };
-$('today').onclick = function(){ weekStart = mondayOf(new Date()); render(); };
-$('add').onclick = function(){ openForm(null); };
-$('v-week').onclick = function(){ view = 'week'; render(); };
+$('prev').onclick = function(){
+  if (view === 'month') monthStart = new Date(monthStart.getFullYear(), monthStart.getMonth() - 1, 1);
+  else weekStart = addDays(weekStart, -7);
+  render();
+};
+$('next').onclick = function(){
+  if (view === 'month') monthStart = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 1);
+  else weekStart = addDays(weekStart, 7);
+  render();
+};
+$('today').onclick = function(){
+  var n = new Date();
+  weekStart = mondayOf(n);
+  monthStart = new Date(n.getFullYear(), n.getMonth(), 1);
+  selDay = ymd(n);
+  render();
+};
+$('add').onclick = function(){ openForm(null, view === 'month' ? { date: selDay } : null); };
+$('v-month').onclick = function(){ view = 'month'; render(); };
+$('v-week').onclick = function(){ weekStart = mondayOf(parse(selDay)); view = 'week'; render(); };
 $('v-list').onclick = function(){ view = 'list'; render(); };
 $('clear-ex').onclick = function(){
   state.tasks = state.tasks.filter(function(t){ return !t.ex; });
